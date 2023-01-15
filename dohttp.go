@@ -1,21 +1,24 @@
 package dingtalk
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"net"
-	"net/http"
+	"errors"
 	"time"
+
+	"github.com/imroc/req/v3"
 )
 
+type Result struct {
+	ErrCode int    `json:"errcode,omitempty"`
+	ErrMsg  string `json:"errmsg,omitempty"`
+}
+
 var (
-	myHTTPClient *http.Client
+	myHTTPClient *req.Client
 )
 
 const (
-	defaultDialTimeout             = 2 * time.Second
-	defaultKeepAlive               = 2 * time.Second
+	defaultTimeout = 5 * time.Second
 )
 
 func init() {
@@ -23,42 +26,28 @@ func init() {
 }
 
 // initDefaultHTTPClient for connection re-use
-func initDefaultHTTPClient() *http.Client {
-	client := &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: (&net.Dialer{
-				Timeout:   defaultDialTimeout,
-				KeepAlive: defaultKeepAlive,
-			}).DialContext,
-		},
-		Timeout: defaultDialTimeout,
-	}
+func initDefaultHTTPClient() *req.Client {
+	client := req.C().
+		SetTimeout(defaultTimeout)
 	return client
 }
 
-
-
-func doRequest(ctx context.Context, callMethod string, endPoint string, header map[string]string, body []byte) (*http.Response, error) {
-
-	req, err := http.NewRequest(callMethod, endPoint, bytes.NewBuffer(body))
+func doRequest(ctx context.Context, callMethod string, endPoint string, header map[string]string, body []byte) (*Result, error) {
+	req := myHTTPClient.R()
+	result := Result{}
+	var errMsg string
+	_, err := req.
+		SetHeaders(header).
+		SetBodyBytes(body).
+		SetResult(&result).
+		SetError(&errMsg).
+		Post(endPoint)
 	if err != nil {
 		return nil, err
 	}
-	if header != nil && len(header) > 0 {
-		for k, v := range header {
-			req.Header.Set(k, v)
-		}
-	}
-	req = req.WithContext(ctx)
-	// use myHttpClient to send request
-	response, err := myHTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if response == nil {
-		return nil, fmt.Errorf("reponse is nil, please check it")
+	if errMsg != "" {
+		return nil, errors.New(errMsg)
 	}
 
-	return response, nil
+	return &result, nil
 }

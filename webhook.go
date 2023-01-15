@@ -6,11 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
-	"net/http"
 	"net/url"
 	"time"
 )
@@ -21,17 +21,17 @@ func InitDingTalk(tokens []string, key string) *DingTalk {
 	}
 	return &DingTalk{
 		robotToken: tokens,
-		keyWord: key,
+		keyWord:    key,
 	}
 }
 
 func InitDingTalkWithSecret(tokens string, secret string) *DingTalk {
-	if len(tokens) == 0 || secret==""{
+	if len(tokens) == 0 || secret == "" {
 		panic("no token")
 	}
 	return &DingTalk{
 		robotToken: []string{tokens},
-		secret: secret,
+		secret:     secret,
 	}
 }
 
@@ -40,7 +40,7 @@ func (d *DingTalk) sendMessage(msg iDingMsg) error {
 		ctx    context.Context
 		cancel context.CancelFunc
 		uri    string
-		resp   *http.Response
+		result *Result
 		err    error
 	)
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second*2)
@@ -48,7 +48,7 @@ func (d *DingTalk) sendMessage(msg iDingMsg) error {
 
 	value := url.Values{}
 	value.Set("access_token", d.robotToken[rand.Intn(len(d.robotToken))])
-	if d.secret!=""{
+	if d.secret != "" {
 		t := time.Now().UnixNano() / 1e6
 		value.Set("timestamp", fmt.Sprintf("%d", t))
 		value.Set("sign", d.sign(t, d.secret))
@@ -58,14 +58,12 @@ func (d *DingTalk) sendMessage(msg iDingMsg) error {
 	header := map[string]string{
 		"Content-type": "application/json",
 	}
-	resp, err = doRequest(ctx, "POST", uri, header, msg.Marshaler())
-
+	result, err = doRequest(ctx, "POST", uri, header, msg.Marshaler())
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
-		return fmt.Errorf("send msg err: %s, token: %s, msg: %s", string(body), d.robotToken, msg.Marshaler())
+	if result.ErrCode != 0 {
+		return errors.New(result.ErrMsg)
 	}
 	return nil
 }
